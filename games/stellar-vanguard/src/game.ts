@@ -25,6 +25,8 @@ export class StellarVanguardGame {
   public minerals = 500;
   public energy = 100;
   public wave = 1;
+  public isVictory = false;
+  public isGameOver = false;
   private spawnTimer = 3.0;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -40,7 +42,9 @@ export class StellarVanguardGame {
   }
 
   public initFleet(): void {
-    // Player fleet
+    this.units = [];
+    this.isVictory = false;
+    this.isGameOver = false;
     for (let i = 0; i < 8; i++) {
       this.units.push({
         id: i,
@@ -55,11 +59,42 @@ export class StellarVanguardGame {
     }
   }
 
+  public restartGame(): void {
+    this.wave = 1;
+    this.minerals = 500;
+    this.initFleet();
+  }
+
+  public nextSector(): void {
+    this.wave = 1;
+    this.minerals += 500;
+    this.initFleet();
+  }
+
   public update(dt: number): void {
+    if (this.isVictory) {
+      if (this.input.isKeyDown('KeyR') || this.input.isKeyDown('Enter') || this.input.isMouseJustPressed) {
+        this.nextSector();
+        return;
+      }
+    } else if (this.isGameOver) {
+      if (this.input.isKeyDown('KeyR') || this.input.isKeyDown('Enter') || this.input.isMouseJustPressed) {
+        this.restartGame();
+        return;
+      }
+    }
+
+    if (this.isVictory || this.isGameOver) return;
+
     this.spawnTimer -= dt;
     if (this.spawnTimer <= 0) {
-      this.spawnTimer = 6.0;
+      this.spawnTimer = 7.0;
       this.wave++;
+      if (this.wave > 5) {
+        this.isVictory = true;
+        this.audio.playCoin();
+        return;
+      }
       for (let i = 0; i < 4 + this.wave; i++) {
         this.units.push({
           id: 1000 + i + this.wave * 10,
@@ -85,6 +120,12 @@ export class StellarVanguardGame {
     }
 
     // Unit flocking & combat
+    const playerUnits = this.units.filter(o => !o.isEnemy);
+    if (playerUnits.length === 0 && !this.isGameOver) {
+      this.isGameOver = true;
+      this.audio.playExplosion();
+    }
+
     for (let i = 0; i < this.units.length; i++) {
       const u = this.units[i]!;
       const friends = this.units.filter(o => o.isEnemy === u.isEnemy);
@@ -166,12 +207,50 @@ export class StellarVanguardGame {
 
       // HUD
       ctx.fillStyle = 'rgba(10, 15, 25, 0.85)';
-      ctx.fillRect(10, 10, 320, 45);
+      ctx.fillRect(10, 10, 340, 50);
       ctx.fillStyle = '#00d2d3';
       ctx.font = 'bold 14px monospace';
-      ctx.fillText(`STELLAR VANGUARD | WAVE: ${this.wave}`, 20, 30);
+      ctx.fillText(`STELLAR VANGUARD | WAVE: ${this.wave}/5`, 20, 30);
       ctx.fillStyle = '#f1c40f';
-      ctx.fillText(`MINERALS: ${this.minerals}  ENERGY: ${this.energy}`, 20, 46);
+      ctx.fillText(`MINERALS: ${this.minerals}  |  FLEET SIZE: ${this.units.filter(u => !u.isEnemy).length}`, 20, 48);
+
+      // VICTORY SCREEN
+      if (this.isVictory) {
+        ctx.fillStyle = 'rgba(5, 20, 35, 0.9)';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillStyle = '#2ecc71';
+        ctx.font = 'bold 36px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText("🏆 VICTORY - SECTOR LIBERATED!", this.canvas.width * 0.5, this.canvas.height * 0.38);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '18px monospace';
+        ctx.fillText(`All 5 Armada Waves Defeated! Total Minerals: ${this.minerals}`, this.canvas.width * 0.5, this.canvas.height * 0.48);
+        ctx.fillStyle = '#1f6feb';
+        ctx.fillRect(this.canvas.width * 0.5 - 140, this.canvas.height * 0.58, 280, 50);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText("▶ DEFEND NEXT SECTOR (Click)", this.canvas.width * 0.5, this.canvas.height * 0.58 + 32);
+        ctx.textAlign = 'left';
+      }
+
+      // GAME OVER SCREEN
+      if (this.isGameOver) {
+        ctx.fillStyle = 'rgba(30, 5, 5, 0.9)';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        ctx.fillStyle = '#e74c3c';
+        ctx.font = 'bold 38px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText("💀 FLEET DESTROYED", this.canvas.width * 0.5, this.canvas.height * 0.38);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '18px monospace';
+        ctx.fillText("All vessels lost in combat against the armada", this.canvas.width * 0.5, this.canvas.height * 0.48);
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(this.canvas.width * 0.5 - 120, this.canvas.height * 0.58, 240, 50);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText("🔄 REBUILD FLEET (R/Click)", this.canvas.width * 0.5, this.canvas.height * 0.58 + 32);
+        ctx.textAlign = 'left';
+      }
     }
   }
 }

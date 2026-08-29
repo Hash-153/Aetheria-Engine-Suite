@@ -13,6 +13,7 @@ export interface DungeonPlayer {
   attackPower: number;
   score: number;
   speed: number;
+  kills: number;
 }
 
 export interface DungeonEnemy {
@@ -42,7 +43,10 @@ export class ChronoDungeonGame {
   public rooms: Rect[] = [];
   public astar: AStarGrid2D;
   public tileSize = 32;
+  public floorLevel = 1;
   public isGameOver = false;
+  public isVictory = false;
+  private victoryCelebrated = false;
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -60,15 +64,19 @@ export class ChronoDungeonGame {
       pos: new Vec2(5, 5),
       hp: 100,
       maxHp: 100,
-      attackPower: 25,
+      attackPower: 35,
       score: 0,
-      speed: 160
+      speed: 170,
+      kills: 0
     };
 
     this.initLevel();
   }
 
   public initLevel(): void {
+    this.isVictory = false;
+    this.isGameOver = false;
+    this.victoryCelebrated = false;
     this.rooms = this.dungeon.generate(4, 5);
 
     for (let x = 0; x < this.dungeon.width; x++) {
@@ -85,15 +93,16 @@ export class ChronoDungeonGame {
       );
 
       this.enemies = [];
-      for (let i = 1; i < this.rooms.length; i++) {
+      const enemyCount = Math.min(this.rooms.length - 1, 3 + this.floorLevel * 2);
+      for (let i = 1; i <= enemyCount && i < this.rooms.length; i++) {
         const r = this.rooms[i]!;
         this.enemies.push({
           id: i,
           pos: new Vec2((r.x + Math.floor(r.w * 0.5)) * this.tileSize, (r.y + Math.floor(r.h * 0.5)) * this.tileSize),
-          hp: 40 + i * 10,
-          maxHp: 40 + i * 10,
-          attack: 10 + i * 2,
-          speed: 70 + Math.random() * 20,
+          hp: 40 + this.floorLevel * 15,
+          maxHp: 40 + this.floorLevel * 15,
+          attack: 8 + this.floorLevel * 3,
+          speed: 65 + Math.random() * 20,
           color: [0.9, 0.2, 0.2, 1],
           path: [],
           pathTimer: 0
@@ -102,8 +111,35 @@ export class ChronoDungeonGame {
     }
   }
 
+  public restartGame(): void {
+    this.floorLevel = 1;
+    this.player.hp = this.player.maxHp;
+    this.player.score = 0;
+    this.player.kills = 0;
+    this.initLevel();
+  }
+
+  public nextFloor(): void {
+    this.floorLevel++;
+    this.player.hp = Math.min(this.player.maxHp, this.player.hp + 40);
+    this.player.score += 500 * this.floorLevel;
+    this.initLevel();
+  }
+
   public update(dt: number): void {
-    if (this.isGameOver) return;
+    if (this.isVictory) {
+      if (this.input.isKeyDown('KeyR') || this.input.isKeyDown('Enter') || this.input.isMouseJustPressed) {
+        this.nextFloor();
+        return;
+      }
+    } else if (this.isGameOver) {
+      if (this.input.isKeyDown('KeyR') || this.input.isKeyDown('Enter') || this.input.isMouseJustPressed) {
+        this.restartGame();
+        return;
+      }
+    }
+
+    if (this.isGameOver || this.isVictory) return;
 
     // Movement
     const move = new Vec2();
@@ -134,19 +170,30 @@ export class ChronoDungeonGame {
     if (this.input.isKeyDown('Space')) {
       for (let i = this.enemies.length - 1; i >= 0; i--) {
         const e = this.enemies[i]!;
-        if (this.player.pos.distance(e.pos) < 50) {
+        if (this.player.pos.distance(e.pos) < 55) {
           e.hp -= this.player.attackPower * dt * 5;
           this.audio.playLaser();
           this.camera.shake(4, 0.1);
-          this.particles.emit(e.pos, 5, 80, [1, 0.2, 0.2, 1]);
+          this.particles.emit(e.pos, 4, 80, [1, 0.2, 0.2, 1]);
 
           if (e.hp <= 0) {
             this.audio.playExplosion();
-            this.particles.emit(e.pos, 20, 150, [1, 0.8, 0.2, 1]);
-            this.player.score += 100;
+            this.particles.emit(e.pos, 25, 160, [1, 0.8, 0.2, 1], 1.2, 6);
+            this.player.score += 150;
+            this.player.kills++;
             this.enemies.splice(i, 1);
           }
         }
+      }
+    }
+
+    // Check Floor Victory
+    if (this.enemies.length === 0 && !this.isVictory) {
+      this.isVictory = true;
+      if (!this.victoryCelebrated) {
+        this.victoryCelebrated = true;
+        this.audio.playCoin();
+        this.particles.emit(this.player.pos, 50, 220, [0.2, 1.0, 0.4, 1], 2.0, 8);
       }
     }
 
@@ -158,7 +205,7 @@ export class ChronoDungeonGame {
       const e = this.enemies[i]!;
       e.pathTimer -= dt;
       if (e.pathTimer <= 0) {
-        e.pathTimer = 0.5 + Math.random() * 0.2;
+        e.pathTimer = 0.4 + Math.random() * 0.2;
         const eGridX = Math.floor(e.pos.x / this.tileSize);
         const eGridY = Math.floor(e.pos.y / this.tileSize);
         e.path = this.astar.findPath(eGridX, eGridY, pGridX, pGridY);
@@ -175,13 +222,14 @@ export class ChronoDungeonGame {
       }
 
       // Attack player
-      if (e.pos.distance(this.player.pos) < 24) {
+      if (e.pos.distance(this.player.pos) < 26) {
         this.player.hp -= e.attack * dt;
         this.camera.shake(6, 0.1);
         if (this.player.hp <= 0) {
           this.player.hp = 0;
           this.isGameOver = true;
           this.audio.playExplosion();
+          this.particles.emit(this.player.pos, 40, 180, [1, 0, 0, 1], 1.5, 7);
         }
       }
     }
@@ -215,7 +263,6 @@ export class ChronoDungeonGame {
         ctx.arc(e.pos.x, e.pos.y, 14, 0, Math.PI * 2);
         ctx.fill();
 
-        // Enemy HP bar
         ctx.fillStyle = 'rgba(0,0,0,0.6)';
         ctx.fillRect(e.pos.x - 16, e.pos.y - 24, 32, 4);
         ctx.fillStyle = '#2ecc71';
@@ -234,29 +281,74 @@ export class ChronoDungeonGame {
       ctx.restore();
 
       // Draw HUD
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
-      ctx.fillRect(10, 10, 240, 70);
+      ctx.fillStyle = 'rgba(10, 15, 25, 0.85)';
+      ctx.fillRect(10, 10, 310, 80);
 
-      ctx.fillStyle = '#ffffff';
-      ctx.font = 'bold 16px monospace';
-      ctx.fillText(`CHRONO DUNGEON - SCORE: ${this.player.score}`, 20, 32);
+      ctx.fillStyle = '#58a6ff';
+      ctx.font = 'bold 15px monospace';
+      ctx.fillText(`FLOOR ${this.floorLevel} | SCORE: ${this.player.score}`, 20, 32);
 
       // Health bar
       ctx.fillStyle = '#c0392b';
-      ctx.fillRect(20, 44, 200, 16);
+      ctx.fillRect(20, 42, 220, 14);
       ctx.fillStyle = '#2ecc71';
-      ctx.fillRect(20, 44, Math.max(0, (this.player.hp / this.player.maxHp) * 200), 16);
+      ctx.fillRect(20, 42, Math.max(0, (this.player.hp / this.player.maxHp) * 220), 14);
 
       ctx.fillStyle = '#ffffff';
-      ctx.font = '12px monospace';
-      ctx.fillText(`HP: ${Math.ceil(this.player.hp)} / ${this.player.maxHp}`, 70, 57);
+      ctx.font = '11px monospace';
+      ctx.fillText(`HP: ${Math.ceil(this.player.hp)} / ${this.player.maxHp}`, 90, 53);
 
-      if (this.isGameOver) {
-        ctx.fillStyle = 'rgba(0,0,0,0.85)';
+      ctx.fillStyle = '#f1c40f';
+      ctx.font = '12px monospace';
+      ctx.fillText(`Enemies: ${this.enemies.length} | Kills: ${this.player.kills}`, 20, 78);
+
+      // 🏆 VICTORY OVERLAY SCREEN
+      if (this.isVictory) {
+        ctx.fillStyle = 'rgba(5, 15, 25, 0.88)';
         ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-        ctx.fillStyle = '#e74c3c';
+
+        ctx.fillStyle = '#2ecc71';
         ctx.font = 'bold 36px monospace';
-        ctx.fillText("GAME OVER", this.canvas.width * 0.5 - 100, this.canvas.height * 0.5);
+        ctx.textAlign = 'center';
+        ctx.fillText("🎉 VICTORY - FLOOR CLEARED!", this.canvas.width * 0.5, this.canvas.height * 0.35);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '18px monospace';
+        ctx.fillText(`Floor ${this.floorLevel} Conquered!`, this.canvas.width * 0.5, this.canvas.height * 0.45);
+        ctx.fillText(`Total Score: ${this.player.score}  |  Enemies Slain: ${this.player.kills}`, this.canvas.width * 0.5, this.canvas.height * 0.52);
+
+        // Interactive Button Box
+        ctx.fillStyle = '#1f6feb';
+        ctx.fillRect(this.canvas.width * 0.5 - 150, this.canvas.height * 0.62, 300, 50);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText("▶ ENTER NEXT FLOOR (Enter/Click)", this.canvas.width * 0.5, this.canvas.height * 0.62 + 32);
+
+        ctx.textAlign = 'left';
+      }
+
+      // 💀 GAME OVER OVERLAY SCREEN
+      if (this.isGameOver) {
+        ctx.fillStyle = 'rgba(25, 5, 5, 0.9)';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+
+        ctx.fillStyle = '#e74c3c';
+        ctx.font = 'bold 38px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText("💀 YOU WERE DEFEATED", this.canvas.width * 0.5, this.canvas.height * 0.35);
+
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '18px monospace';
+        ctx.fillText(`Fell on Floor ${this.floorLevel} | Final Score: ${this.player.score}`, this.canvas.width * 0.5, this.canvas.height * 0.46);
+
+        // Restart button
+        ctx.fillStyle = '#c0392b';
+        ctx.fillRect(this.canvas.width * 0.5 - 130, this.canvas.height * 0.58, 260, 50);
+        ctx.fillStyle = '#ffffff';
+        ctx.font = 'bold 16px monospace';
+        ctx.fillText("🔄 TRY AGAIN (R / Click)", this.canvas.width * 0.5, this.canvas.height * 0.58 + 32);
+
+        ctx.textAlign = 'left';
       }
     }
   }
