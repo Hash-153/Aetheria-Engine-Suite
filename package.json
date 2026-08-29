@@ -1,0 +1,35 @@
+{
+  "name": "aetheria-engine",
+  "version": "1.0.0",
+  "description": "Aetheria Game Engine & Game Suite - High-performance modular 2D/3D TypeScript WebGL engine, custom physics, ECS, AI, audio synth, and game suite",
+  "type": "module",
+  "main": "dist/packages/index.js",
+  "module": "dist/packages/index.js",
+  "types": "dist/packages/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/tests/runner.js",
+    "benchmark": "node dist/benchmarks/suite.js",
+    "start": "node scripts/dev-server.js",
+    "dev": "node scripts/dev-server.js"
+  },
+  "keywords": [
+    "game-engine",
+    "webgl2",
+    "ecs",
+    "physics-engine",
+    "behavior-trees",
+    "audio-synth",
+    "pathfinding",
+    "roguelike",
+    "rts",
+    "platformer",
+    "typescript"
+  ],
+  "author": "Hash-153 <hashv153@gmail.com>",
+  "license": "UNLICENSED",
+  "private": true,
+  "devDependencies": {
+    "typescript": "^5.4.0"
+  }
+}
